@@ -1,4 +1,3 @@
-// app/api/analyze/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 
@@ -22,14 +21,15 @@ class RequestQueue {
   private maxConcurrent = 3;
   private activeRequests = 0;
 
-  async add(item: Omit<QueueItem, 'id' | 'timestamp'>): Promise<any> {
+  async add(resume: string, jobDescription: string): Promise<any> {
     return new Promise((resolve, reject) => {
       this.queue.push({
         id: crypto.randomUUID(),
         timestamp: Date.now(),
+        resume,
+        jobDescription,
         resolve,
-        reject,
-        ...item
+        reject
       });
       this.process();
     });
@@ -93,8 +93,13 @@ function decrypt(text: string): string {
   const algorithm = 'aes-256-cbc';
   const key = Buffer.from(process.env.ENCRYPTION_KEY || 'your-32-character-secret-key!!', 'utf8');
   const parts = text.split(':');
+  
+  // Access specific index 0 for IV
   const iv = Buffer.from(parts[0], 'hex');
-  const encryptedText = parts[1];
+  
+  // Join remaining parts for encrypted text
+  const encryptedText = parts.slice(1).join(':');
+  
   const decipher = crypto.createDecipheriv(algorithm, key, iv);
   let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
@@ -129,6 +134,7 @@ function saveToCache(key: string, data: any): void {
   if (cache.size > 1000) {
     const entries = Array.from(cache.entries());
     entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+    // Correctly delete the oldest entry
     cache.delete(entries[0][0]);
   }
 }
@@ -162,6 +168,7 @@ async function analyzeWithGroq(resume: string, jobDescription: string) {
   }
 
   const data = await response.json();
+  // Access array index [0]
   const result = JSON.parse(data.choices[0].message.content);
   
   return {
@@ -197,7 +204,9 @@ async function analyzeWithGemini(resume: string, jobDescription: string) {
   }
 
   const data = await response.json();
+  // Access array indices [0][0]
   const text = data.candidates[0].content.parts[0].text;
+  
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   const result = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(text);
   
@@ -213,7 +222,6 @@ function fallbackAnalysis(resume: string, jobDescription: string) {
   const resumeLower = resume.toLowerCase();
   const jobLower = jobDescription.toLowerCase();
   
-  // Extract common tech keywords
   const keywords = jobLower.match(/\b\w+\b/g) || [];
   const uniqueKeywords = [...new Set(keywords)].filter(k => k.length > 3);
   
@@ -222,7 +230,9 @@ function fallbackAnalysis(resume: string, jobDescription: string) {
   ).slice(0, 10);
   
   const matchedCount = uniqueKeywords.length - missingKeywords.length;
-  const score = Math.min(95, Math.round((matchedCount / uniqueKeywords.length) * 100));
+  const score = uniqueKeywords.length > 0 
+    ? Math.min(95, Math.round((matchedCount / uniqueKeywords.length) * 100))
+    : 0;
   
   return {
     provider: 'fallback',
@@ -245,9 +255,15 @@ function fallbackAnalysis(resume: string, jobDescription: string) {
 
 // Main API handler
 export async function POST(req: NextRequest) {
+  // Declare variables outside the try block so they are accessible in catch
+  let resume = '';
+  let jobDescription = '';
+
   try {
     const body = await req.json();
-    const { resume, jobDescription } = body;
+    // Assign variables here
+    resume = body.resume;
+    jobDescription = body.jobDescription;
 
     // Validation
     if (!resume || !jobDescription) {
@@ -285,10 +301,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Add to queue for processing
-    const result = await queue.add({
-      resume: decrypt(encryptedResume),
-      jobDescription: decrypt(encryptedJob)
-    });
+    const result = await queue.add(
+      decrypt(encryptedResume),
+      decrypt(encryptedJob)
+    );
 
     // Save to cache
     saveToCache(cacheKey, result);
@@ -309,7 +325,7 @@ export async function POST(req: NextRequest) {
       error: 'Analysis failed',
       message: error.message,
       fallback: true,
-      result: fallbackAnalysis('', ''),
+      result: fallbackAnalysis(resume, jobDescription),
       aiProcessingNotice: 'AI services temporarily unavailable. Basic analysis provided.',
     }, { status: 200 }); // Return 200 with fallback instead of error
   }
