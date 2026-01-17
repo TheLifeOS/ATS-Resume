@@ -1,3 +1,4 @@
+'use client'
 import React, { useState } from 'react';
 import { Upload, Shield, Zap, CheckCircle, TrendingUp, FileText, Target, Award, ChevronRight } from 'lucide-react';
 
