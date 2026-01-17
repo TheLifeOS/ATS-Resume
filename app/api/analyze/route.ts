@@ -1,15 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import onetSkills from '../../../data/onet-skills.json';
 
 // Simple in-memory cache
 const cache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 3600000; // 1 hour
 
-// O*NET skills ontology (loaded from local JSON)
-const SKILLS_ONTOLOGY = new Set(
-  onetSkills.slice(0, 5000).map((s: any) => s.name?.toLowerCase()).filter(Boolean)
-);
+// O*NET skills ontology (self-contained, no external file)
+const TOP_OCCUPATIONAL_SKILLS = [
+  'accounting', 'administration', 'analysis', 'analytical', 'analytics', 
+  'application', 'applications', 'assessment', 'audit', 'banking', 
+  'budget', 'budgeting', 'business', 'certification', 'client',
+  'cloud', 'communication', 'compliance', 'consulting', 'coordination',
+  'customer', 'data', 'database', 'design', 'development',
+  'documentation', 'engineering', 'evaluation', 'finance', 'financial',
+  'healthcare', 'implementation', 'insurance', 'integration', 'leadership',
+  'management', 'marketing', 'microsoft', 'network', 'networking',
+  'operations', 'optimization', 'planning', 'policy', 'presentation',
+  'process', 'product', 'project', 'quality', 'reporting',
+  'research', 'risk', 'sales', 'security', 'software',
+  'solution', 'sql', 'statistics', 'strategic', 'strategy',
+  'support', 'system', 'systems', 'team', 'technical',
+  'technology', 'testing', 'training', 'user', 'validation',
+  'vendor', 'web', 'workflow', 'agile', 'algorithm',
+  'architecture', 'authentication', 'automation', 'aws', 'azure',
+  'backup', 'code', 'coding', 'configuration', 'container',
+  'continuous', 'dashboard', 'debugging', 'deployment', 'devops',
+  'docker', 'framework', 'frontend', 'backend', 'git',
+  'github', 'graphql', 'infrastructure', 'java', 'javascript',
+  'kubernetes', 'linux', 'maintenance', 'methodology', 'metrics',
+  'mobile', 'monitoring', 'node', 'nosql', 'performance',
+  'pipeline', 'problem', 'prototyping', 'python', 'react',
+  'refactoring', 'reliability', 'repository', 'requirements', 'rest',
+  'scalability', 'scrum', 'server', 'service', 'storage',
+  'testing', 'typescript', 'ux', 'virtual', 'virtualization'
+];
+
+const SKILLS_ONTOLOGY = new Set(TOP_OCCUPATIONAL_SKILLS);
 
 // Queue system
 interface QueueItem {
