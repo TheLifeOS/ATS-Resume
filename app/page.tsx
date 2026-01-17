@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Upload, Shield, Zap, CheckCircle, TrendingUp, FileText, Target, Award, ChevronRight } from 'lucide-react';
 
 export default function ModernATSRedesign() {
-  const [isHovered, setIsHovered] = useState(null);
+const [isHovered, setIsHovered] = useState<number | null>(null);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-white">
