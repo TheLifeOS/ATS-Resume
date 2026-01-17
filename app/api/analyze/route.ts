@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 
 // Simple in-memory cache
-const cache = new Map<string, { data: any; timestamp: number }>();
+const cache = new Map<string, { data: unknown; timestamp: number }>();
 const CACHE_TTL = 3600000; // 1 hour
 
-// O*NET skills ontology (self-contained, no external file)
+// O*NET skills ontology (self-contained)
 const TOP_OCCUPATIONAL_SKILLS = [
   'accounting', 'administration', 'analysis', 'analytical', 'analytics', 
   'application', 'applications', 'assessment', 'audit', 'banking', 
@@ -43,8 +43,8 @@ interface QueueItem {
   resume: string;
   jobDescription: string;
   timestamp: number;
-  resolve: (value: any) => void;
-  reject: (reason: any) => void;
+  resolve: (value: unknown) => void;
+  reject: (reason: Error) => void;
 }
 
 class RequestQueue {
@@ -53,7 +53,7 @@ class RequestQueue {
   private maxConcurrent = 3;
   private activeRequests = 0;
 
-  async add(resume: string, jobDescription: string): Promise<any> {
+  async add(resume: string, jobDescription: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
       this.queue.push({
         id: crypto.randomUUID(),
@@ -80,7 +80,7 @@ class RequestQueue {
       const result = await this.executeAnalysis(item.resume, item.jobDescription);
       item.resolve(result);
     } catch (error) {
-      item.reject(error);
+      item.reject(error instanceof Error ? error : new Error('Unknown error'));
     } finally {
       this.activeRequests--;
       this.processing = false;
@@ -112,34 +112,12 @@ class RequestQueue {
 
 const queue = new RequestQueue();
 
-// Encryption utilities
-function encrypt(text: string): string {
-  const algorithm = 'aes-256-cbc';
-  const key = Buffer.from(process.env.ENCRYPTION_KEY!.padEnd(32, '!').slice(0, 32), 'utf8');
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(algorithm, key, iv);
-  let encrypted = cipher.update(text, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  return `${iv.toString('hex')}:${encrypted}`;
-}
-
-function decrypt(text: string): string {
-  const algorithm = 'aes-256-cbc';
-  const key = Buffer.from(process.env.ENCRYPTION_KEY!.padEnd(32, '!').slice(0, 32), 'utf8');
-  const [ivHex, encrypted] = text.split(':');
-  const iv = Buffer.from(ivHex, 'hex');
-  const decipher = crypto.createDecipheriv(algorithm, key, iv);
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
-}
-
 // Cache helpers
 function getCacheKey(resume: string, jobDescription: string): string {
   return crypto.createHash('sha256').update(resume + jobDescription).digest('hex');
 }
 
-function getFromCache(key: string): any | null {
+function getFromCache(key: string): unknown | null {
   const cached = cache.get(key);
   if (!cached) return null;
   
@@ -151,7 +129,7 @@ function getFromCache(key: string): any | null {
   return cached.data;
 }
 
-function saveToCache(key: string, data: any): void {
+function saveToCache(key: string, data: unknown): void {
   cache.set(key, { data, timestamp: Date.now() });
   
   // Prevent memory leak
@@ -256,7 +234,7 @@ export async function POST(req: NextRequest) {
   let jobDescription = '';
 
   try {
-    const body = await req.json();
+    const body = await req.json() as { resume: string; jobDescription: string };
     resume = body.resume;
     jobDescription = body.jobDescription;
 
@@ -277,12 +255,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...cached, cached: true });
     }
 
-    const result = await queue.add(resume, jobDescription);
+    const result = await queue.add(resume, jobDescription) as Record<string, unknown>;
     saveToCache(cacheKey, result);
 
     return NextResponse.json({ ...result, cached: false });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('Critical error:', error);
     
     // Tier 4: Emergency response - NEVER return 500
